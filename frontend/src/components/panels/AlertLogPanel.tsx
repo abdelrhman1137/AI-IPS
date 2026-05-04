@@ -113,7 +113,7 @@ export default function AlertLogPanel({ token }: { token: string }) {
               </tr>
             </thead>
             <tbody>
-              {filtered.slice(0, 400).map((a, i) => (
+              {filtered.map((a, i) => (
                 <Row key={i} a={a} token={token} />
               ))}
             </tbody>

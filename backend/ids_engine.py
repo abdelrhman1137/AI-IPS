@@ -11,6 +11,7 @@ import time
 import json
 import random
 import asyncio
+import ipaddress
 import subprocess
 import threading
 import numpy as np
@@ -110,11 +111,64 @@ def set_loop(loop: asyncio.AbstractEventLoop):
     _event_loop = loop
 
 
+# ── IP classification helper ──────────────────────────────────────────────────
+_PRIVATE_NETWORKS = [
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("169.254.0.0/16"),   # link-local
+    ipaddress.ip_network("::1/128"),           # IPv6 loopback
+]
+
+def is_private_ip(ip: str) -> bool:
+    """Return True if the IP is a private/local range that should never be blocked."""
+    if not ip:
+        return True
+    try:
+        addr = ipaddress.ip_address(ip)
+        return any(addr in net for net in _PRIVATE_NETWORKS)
+    except ValueError:
+        return True  # unparseable — skip to be safe
+
+
+# ── Firewall helpers ───────────────────────────────────────────────────────────
+BLOCK_CONF_THRESHOLD = 0.85   # minimum confidence to trigger a block
+
+def _firewall_block(ip: str) -> bool:
+    """Add a Windows Firewall inbound block rule. Returns True on success."""
+    rule_name = f"IPS_BLOCK_{ip}"
+    cmd = (
+        f'netsh advfirewall firewall add rule '
+        f'name="{rule_name}" dir=in action=block remoteip={ip}'
+    )
+    try:
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
+def unblock_ip(ip: str) -> bool:
+    """Remove the Windows Firewall block rule for an IP. Returns True on success."""
+    rule_name = f"IPS_BLOCK_{ip}"
+    cmd = f'netsh advfirewall firewall delete rule name="{rule_name}"'
+    try:
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        ok = result.returncode == 0
+        if ok:
+            engine.blocked_ips.discard(ip)
+        return ok
+    except Exception:
+        return False
+
+
 # ── Mitigation ─────────────────────────────────────────────────────────────────
 def execute_mitigation(ip: str, severity: str, label: str, conf: float, is_sim: bool):
     blocked   = False
     pcap_path = ""
 
+    # Dump PCAP for any HIGH or CRITICAL alert
     if severity in ("CRITICAL", "HIGH") and ip:
         os.makedirs(os.path.join(_ROOT, "pcap_dumps"), exist_ok=True)
         fname = os.path.join(_ROOT, "pcap_dumps",
@@ -124,31 +178,38 @@ def execute_mitigation(ip: str, severity: str, label: str, conf: float, is_sim: 
         except Exception:
             pass
 
-    if severity == "CRITICAL" and ip:
-        if settings.auto_block and ip not in engine.blocked_ips:
-            try:
-                cmd = (f'netsh advfirewall firewall add rule name="AI-IDS Block {ip}" '
-                       f'dir=in action=block remoteip={ip}')
-                subprocess.run(cmd, shell=True, capture_output=True, text=True)
-            except Exception:
-                pass
-            blocked = True
+    # Block if: auto_block enabled, severity is HIGH or CRITICAL, conf above threshold,
+    #           IP is not private/local, and not already blocked.
+    should_block = (
+        settings.auto_block
+        and severity in ("CRITICAL", "HIGH")
+        and conf >= BLOCK_CONF_THRESHOLD
+        and ip
+        and not is_private_ip(ip)
+        and ip not in engine.blocked_ips
+        and not is_sim   # never block during simulation — flows use fake IPs
+    )
+
+    if should_block:
+        blocked = _firewall_block(ip)
+        if blocked:
             engine.blocked_ips.add(ip)
 
-        if settings.webhook_url:
-            import requests as req_lib
-            payload = {
-                "content": (
-                    f"🚨 **{severity} ALERT**: {label} detected — {conf:.1%} confidence\n"
-                    f"**Source IP**: `{ip}`\n"
-                    f"**Action**: {'Blocked' if blocked else 'Logged'}\n"
-                    f"**Mode**: {'Simulation' if is_sim else 'Live'}"
-                )
-            }
-            try:
-                req_lib.post(settings.webhook_url, json=payload, timeout=0.5)
-            except Exception:
-                pass
+    # Webhook notification for HIGH / CRITICAL
+    if severity in ("CRITICAL", "HIGH") and settings.webhook_url:
+        import requests as req_lib
+        payload = {
+            "content": (
+                f"🚨 **{severity} ALERT**: {label} detected — {conf:.1%} confidence\n"
+                f"**Source IP**: `{ip}`\n"
+                f"**Action**: {'Blocked (IPS_BLOCK_{ip})' if blocked else 'Logged'}\n"
+                f"**Mode**: {'Simulation' if is_sim else 'Live'}"
+            )
+        }
+        try:
+            req_lib.post(settings.webhook_url, json=payload, timeout=0.5)
+        except Exception:
+            pass
 
     return blocked, pcap_path
 
@@ -252,6 +313,7 @@ def _monitoring_loop(loop: asyncio.AbstractEventLoop):
             "is_sim":      is_sim and fire_alert,
             "all_probs":   {k: round(v, 4) for k, v in all_p.items()},
             "fired":       fire_alert,
+            "duration_us": int(dur),
         }
 
         if fire_alert:

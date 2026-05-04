@@ -101,8 +101,8 @@ if __name__ == "__main__":
     buckets = load_cache()
 
     print("  HOW TO USE:")
-    print("  1. Start the dashboard:  python -m streamlit run dashboard_ids.py")
-    print("  2. Click  ▶ Start  in the left sidebar.")
+    print("  1. Ensure your React frontend (npm run dev) and FastAPI backend are running.")
+    print("  2. Start the Engine from the dashboard.")
     print("  3. Come back here and press ENTER.")
     print()
     try:

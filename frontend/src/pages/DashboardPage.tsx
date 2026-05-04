@@ -41,10 +41,14 @@ export default function DashboardPage({ token, email, onLogout }: Props) {
   // Connect WebSocket
   useWebSocket(token);
 
-  // Detect new CRITICAL events for the overlay
+  const lastCriticalUnix = useRef(0);
+
+  // Detect new CRITICAL events for the overlay — only fire when the unix timestamp
+  // changes so the same event does not re-trigger the sound on every feed update.
   useEffect(() => {
     const latest = feed[0];
-    if (latest && latest.severity === 'CRITICAL' && latest.fired) {
+    if (latest && latest.severity === 'CRITICAL' && latest.fired && latest.unix !== lastCriticalUnix.current) {
+      lastCriticalUnix.current = latest.unix;
       setCriticalEv(latest);
     }
   }, [feed]);

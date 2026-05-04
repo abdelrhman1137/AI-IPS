@@ -2,7 +2,10 @@ import { useEffect, useRef, useCallback } from 'react';
 import { useAlertStore } from '../store/alertStore';
 import type { WsMessage, FlowEvent } from '../types';
 
-const WS_URL = `ws://${window.location.hostname}:8000/ws/feed`;
+// Use Vite's WS proxy so all traffic goes through port 5173 (already allowed
+// by the browser/firewall) — no direct connection to port 8000 needed.
+const WS_PROTOCOL = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+const WS_URL = `${WS_PROTOCOL}//${window.location.host}/ws/feed`;
 const PING_INTERVAL = 15_000;
 const RECONNECT_DELAY = 2_000;
 

@@ -15,6 +15,7 @@ export interface FlowEvent {
   dst_ip:     string;
   src_port:   number;
   dst_port:   number;
+  duration_us: number;
   is_sim:     boolean;
   blocked:    boolean;
   pcap_path:  string;

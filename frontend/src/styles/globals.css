@@ -501,7 +501,7 @@ input[type="range"].nw-slider::-webkit-slider-thumb:hover {
   display: flex;
   align-items: center;
   justify-content: center;
-  pointer-events: none;
+  cursor: pointer;
 }
 .threat-overlay-bg {
   position: absolute;

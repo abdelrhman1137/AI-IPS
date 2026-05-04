@@ -114,6 +114,22 @@ export const useAlertStore = create<AlertStore>((set, get) => ({
       const ts: TsEntry = { unix: ev.unix, label: ev.label, is_sim: ev.is_sim };
       update.tsLog = [...s.tsLog, ts].slice(-MAX_TS_LOG);
       update.alertFlash = s.alertFlash + 1;
+      
+      const alert: AlertRecord = {
+        timestamp: ev.timestamp,
+        unix: ev.unix,
+        label: ev.label,
+        severity: ev.severity,
+        confidence: ev.confidence,
+        port: ev.port,
+        duration_us: ev.duration_us || 0,
+        src: ev.is_sim ? 'SIM' : 'LIVE',
+        src_ip: ev.src_ip,
+        blocked: ev.blocked,
+        pcap_path: ev.pcap_path,
+        all_probs: ev.all_probs
+      };
+      update.alerts = [alert, ...s.alerts].slice(0, MAX_ALERTS);
     }
     set(update);
   },
@@ -122,7 +138,16 @@ export const useAlertStore = create<AlertStore>((set, get) => ({
     alerts: [a, ...s.alerts].slice(0, MAX_ALERTS),
   })),
 
-  setMetrics: (m) => set(m as any),
+  setMetrics: (m) => {
+    const update: Partial<AlertStore> = { ...(m as any) };
+    // Append to the throughput time-series whenever a bps value arrives
+    if (typeof (m as any).throughputBps === 'number') {
+      const bps = (m as any).throughputBps as number;
+      const prev = useAlertStore.getState().throughput;
+      update.throughput = [...prev, [Date.now() / 1000, bps] as ThruEntry].slice(-600);
+    }
+    set(update);
+  },
 
   loadInitial: (data) => {
     set({

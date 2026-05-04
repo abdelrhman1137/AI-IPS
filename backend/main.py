@@ -136,6 +136,18 @@ def clear(email: str = Depends(auth_module.get_current_user)):
     engine_module.clear_session()
     return {"success": True}
 
+class UnblockPayload(BaseModel):
+    ip: str
+
+@app.post("/api/engine/unblock")
+def unblock(payload: UnblockPayload, email: str = Depends(auth_module.get_current_user)):
+    """Remove the Windows Firewall IPS_BLOCK_{ip} rule for the given IP."""
+    ip = payload.ip.strip()
+    if not ip:
+        raise HTTPException(status_code=400, detail="ip is required")
+    ok = engine_module.unblock_ip(ip)
+    return {"success": ok, "ip": ip}
+
 @app.post("/api/engine/selftest")
 def self_test(email: str = Depends(auth_module.get_current_user)):
     if _loop is None:

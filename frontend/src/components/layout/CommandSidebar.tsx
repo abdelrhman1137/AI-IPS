@@ -262,8 +262,8 @@ export default function CommandSidebar({ token, email, onLogout, onCommandPalett
                 Auto-Block Critical IPs
               </label>
               {settings.auto_block && (
-                <div style={{ marginTop: 6, fontSize: 10, padding: '5px 8px', borderRadius: 4, background: 'rgba(255,184,0,0.06)', border: '1px solid rgba(255,184,0,0.15)', color: 'var(--accent-amber)' }}>
-                  ⚠ Requires Administrator
+                <div style={{ marginTop: 6, fontSize: 10, padding: '5px 8px', borderRadius: 4, background: 'rgba(0,255,136,0.06)', border: '1px solid rgba(0,255,136,0.15)', color: 'var(--accent-green)' }}>
+                  ✓ Active
                 </div>
               )}
             </div>
