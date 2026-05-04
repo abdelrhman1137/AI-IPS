@@ -1,0 +1,108 @@
+/* ── NIGHTWATCH Keyframe Animations ─────────────────────────────────────── */
+
+/* Critical threat pulse — applied to CRITICAL feed rows */
+@keyframes threat-pulse {
+  0%, 100% { box-shadow: inset 0 0 0 rgba(255,45,85,0), 0 0 0 rgba(255,45,85,0); }
+  50%       { box-shadow: inset 0 0 12px rgba(255,45,85,0.1), 0 0 20px rgba(255,45,85,0.12); }
+}
+.animate-threat-pulse {
+  animation: threat-pulse 2.4s ease-in-out infinite;
+}
+
+/* Alert row slide-in from top */
+@keyframes slide-in-top {
+  from { opacity: 0; transform: translateY(-10px); max-height: 0; }
+  to   { opacity: 1; transform: translateY(0);     max-height: 60px; }
+}
+.animate-slide-in { animation: slide-in-top 0.28s cubic-bezier(0.22,1,0.36,1) forwards; }
+
+/* Status dot blink */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.3; }
+}
+.animate-blink { animation: blink 1.4s ease-in-out infinite; }
+
+/* Number counter tick */
+@keyframes tick-up {
+  from { transform: translateY(4px); opacity: 0; }
+  to   { transform: translateY(0);   opacity: 1; }
+}
+.animate-tick { animation: tick-up 0.2s ease-out; }
+
+/* Scan sweep — horizontal light bar moving down */
+@keyframes scan-sweep {
+  0%   { top: -2px; opacity: 0.6; }
+  80%  { top: 100%; opacity: 0.3; }
+  100% { top: 100%; opacity: 0; }
+}
+.scan-container { position: relative; overflow: hidden; }
+.scan-line {
+  position: absolute;
+  left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(0,212,255,0.5), transparent);
+  animation: scan-sweep 3s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* Glow pulse on metric cards with new alerts */
+@keyframes card-alert-glow {
+  0%   { box-shadow: 0 0     0  rgba(255,45,85,0); }
+  30%  { box-shadow: 0 0 24px rgba(255,45,85,0.4); }
+  100% { box-shadow: 0 0     0  rgba(255,45,85,0); }
+}
+.animate-card-alert { animation: card-alert-glow 1.5s ease-out forwards; }
+
+/* Sim mode border pulse */
+@keyframes sim-border {
+  0%, 100% { border-color: rgba(191,95,255,0.2); }
+  50%       { border-color: rgba(191,95,255,0.6); }
+}
+.animate-sim-border { animation: sim-border 1.8s ease-in-out infinite; }
+
+/* Critical overlay vignette */
+@keyframes vignette-flash {
+  0%   { opacity: 0; }
+  10%  { opacity: 1; }
+  80%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+.animate-vignette { animation: vignette-flash 3.5s ease-in-out forwards; }
+
+/* Command palette backdrop */
+@keyframes palette-in {
+  from { opacity: 0; transform: scale(0.97) translateY(-8px); }
+  to   { opacity: 1; transform: scale(1)    translateY(0); }
+}
+.animate-palette-in { animation: palette-in 0.18s cubic-bezier(0.22,1,0.36,1) forwards; }
+
+/* Sidebar section expand */
+@keyframes expand-down {
+  from { opacity: 0; max-height: 0; }
+  to   { opacity: 1; max-height: 200px; }
+}
+.animate-expand { animation: expand-down 0.25s ease-out forwards; }
+
+/* Live indicator breathe */
+@keyframes breathe {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.6; transform: scale(0.85); }
+}
+.animate-breathe { animation: breathe 2s ease-in-out infinite; }
+
+/* Metric number flip */
+@keyframes num-flip {
+  0%   { transform: rotateX(90deg); opacity: 0; }
+  100% { transform: rotateX(0);     opacity: 1; }
+}
+.animate-num-flip {
+  display: inline-block;
+  animation: num-flip 0.25s ease-out;
+}
+
+/* Gauge fill arc */
+@keyframes arc-fill {
+  from { stroke-dashoffset: 283; }
+}
+.animate-arc-fill { animation: arc-fill 0.8s cubic-bezier(0.22,1,0.36,1) forwards; }
