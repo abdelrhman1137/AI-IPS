@@ -20,6 +20,29 @@ function Row({ a, token }: { a: AlertRecord; token: string }) {
   const col = SEV_COLOR[a.severity] ?? '#8FA8C8';
   const sevCls: Record<string, string> = { CRITICAL: 'badge-critical', HIGH: 'badge-high', MEDIUM: 'badge-medium', CLEAN: 'badge-clean' };
 
+  const handlePcapDownload = async () => {
+    if (!a.pcap_path) return;
+    const filename = a.pcap_path.split(/[/\\]/).pop()!;
+    try {
+      const response = await fetch(`/api/pcap/${encodeURIComponent(filename)}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!response.ok) throw new Error('Download failed');
+      const blob = await response.blob();
+      const objectUrl = window.URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = objectUrl;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      window.URL.revokeObjectURL(objectUrl);
+      document.body.removeChild(anchor);
+    } catch (e) {
+      console.error(e);
+      alert('Failed to download PCAP file.');
+    }
+  };
+
   return (
     <tr>
       <td style={{ color: 'var(--text-dim)' }}>{a.timestamp}</td>
@@ -33,10 +56,10 @@ function Row({ a, token }: { a: AlertRecord; token: string }) {
       <td>{a.blocked ? <span style={{ color: 'var(--sev-critical)', fontWeight: 600 }}>BLOCKED</span> : '—'}</td>
       <td>
         {a.pcap_path ? (
-          <a href={`/api/pcap/${encodeURIComponent(a.pcap_path.split(/[/\\]/).pop()!)}`}
-             download style={{ color: 'var(--accent-blue)', fontSize: 10, textDecoration: 'none', fontFamily: 'var(--font-mono)' }}>
+          <button onClick={handlePcapDownload}
+             style={{ color: 'var(--accent-blue)', fontSize: 10, textDecoration: 'none', fontFamily: 'var(--font-mono)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
             ↓ PCAP
-          </a>
+          </button>
         ) : '—'}
       </td>
     </tr>
@@ -61,11 +84,29 @@ export default function AlertLogPanel({ token }: { token: string }) {
     );
   };
 
+  const handleDownload = async (url: string, filename: string) => {
+    try {
+      const response = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!response.ok) throw new Error('Download failed');
+      const blob = await response.blob();
+      const objectUrl = window.URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = objectUrl;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      window.URL.revokeObjectURL(objectUrl);
+      document.body.removeChild(anchor);
+    } catch (e) {
+      console.error(e);
+      alert('Failed to download file.');
+    }
+  };
+
   const exportCsv = () => {
-    const anchor = document.createElement('a');
-    anchor.href = `/api/alerts/export`;
-    anchor.download = `ids_alerts_${Date.now()}.csv`;
-    anchor.click();
+    handleDownload('/api/alerts/export', `ids_alerts_${Date.now()}.csv`);
   };
 
   return (

@@ -61,6 +61,7 @@ interface AlertStore {
   setMetrics:      (m: Partial<AlertStore>) => void;
   setSevFilter:    (f: Severity[]) => void;
   loadInitial:     (data: any) => void;
+  setAnalytics:    (data: any) => void;
   reset:           () => void;
 }
 
@@ -160,6 +161,15 @@ export const useAlertStore = create<AlertStore>((set, get) => ({
       uptimeSecs:    data.uptime_secs   ?? 0,
       throughputBps: data.throughput_bps ?? 0,
       alerts:        data.recent_alerts ?? [],
+    });
+  },
+
+  setAnalytics: (data) => {
+    set({
+      tsLog:       (data.ts_log || []).map((t: any) => ({ unix: t[0], label: t[1], is_sim: t[2] })),
+      confHistory: data.conf_history || [],
+      throughput:  data.throughput   || [],
+      threatLog:   data.threat_log   || [],
     });
   },
 

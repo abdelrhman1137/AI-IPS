@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Activity, Layers, BarChart2, List } from 'lucide-react';
+import { Activity, Layers, BarChart2, List, Shield } from 'lucide-react';
 
 import CommandSidebar from '../components/layout/CommandSidebar';
 import MetricsHUD from '../components/panels/MetricsHUD';
@@ -9,6 +9,7 @@ import GaugePanel from '../components/panels/GaugePanel';
 import ThreatTimeline from '../components/panels/ThreatTimeline';
 import AnalyticsPanel from '../components/panels/AnalyticsPanel';
 import AlertLogPanel from '../components/panels/AlertLogPanel';
+import BlockedIPsPanel from '../components/panels/BlockedIPsPanel';
 import CommandPalette from '../components/ui/CommandPalette';
 import ThreatOverlay from '../components/ui/ThreatOverlay';
 
@@ -16,13 +17,14 @@ import { useWebSocket } from '../hooks/useWebSocket';
 import { useAlertStore } from '../store/alertStore';
 import type { FlowEvent } from '../types';
 
-type Tab = 'live' | 'timeline' | 'analytics' | 'log';
+type Tab = 'live' | 'timeline' | 'analytics' | 'log' | 'blocked';
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: 'live',      label: 'Live Feed',        icon: <Activity size={13} /> },
   { id: 'timeline',  label: 'Threat Timeline',  icon: <Layers size={13} /> },
   { id: 'analytics', label: 'Analytics',        icon: <BarChart2 size={13} /> },
   { id: 'log',       label: 'Alert Log',        icon: <List size={13} /> },
+  { id: 'blocked',   label: 'Blocked IPs',      icon: <Shield size={13} /> },
 ];
 
 interface Props {
@@ -40,6 +42,15 @@ export default function DashboardPage({ token, email, onLogout }: Props) {
 
   // Connect WebSocket
   useWebSocket(token);
+
+  // Fetch initial analytics data for charts
+  useEffect(() => {
+    import('../hooks/useAuth').then(({ apiGet }) => {
+      apiGet('/analytics', token).then(data => {
+        if (data) useAlertStore.getState().setAnalytics(data);
+      }).catch(e => console.error(e));
+    });
+  }, [token]);
 
   const lastCriticalUnix = useRef(0);
 
@@ -176,6 +187,12 @@ export default function DashboardPage({ token, email, onLogout }: Props) {
                 {activeTab === 'log' && (
                   <div style={{ flex: 1, overflow: 'hidden' }}>
                     <AlertLogPanel token={token} />
+                  </div>
+                )}
+
+                {activeTab === 'blocked' && (
+                  <div style={{ flex: 1, overflow: 'hidden' }}>
+                    <BlockedIPsPanel token={token} />
                   </div>
                 )}
               </motion.div>

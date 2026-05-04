@@ -101,7 +101,7 @@ def get_session(email: str = Depends(auth_module.get_current_user)):
         "sniffer_ok":     engine_module.engine.sniffer_ok,
         "sniffer_error":  engine_module.receptor.sniffer_error or "",
         "raw_packets":    engine_module.receptor.raw_packet_count,
-        "blocked_ips":    list(engine_module.engine.blocked_ips),
+        "blocked_ips":    engine_module.fw_manager.get_blocked_list(),
         **store.get_stats(uptime, last_bps),
     }
 

@@ -61,7 +61,7 @@ export interface SessionState {
   avg_conf:       number;
   uptime_secs:    number;
   throughput_bps: number;
-  blocked_ips:    string[];
+  blocked_ips:    { ip: string; timestamp: string; reason: string }[];
 }
 
 export interface EngineSettings {

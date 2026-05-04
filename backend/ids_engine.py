@@ -91,7 +91,6 @@ class EngineState:
         self.running:      bool  = False
         self.sim_active:   bool  = False
         self.sniffer_ok:   bool  = False
-        self.blocked_ips:  Set[str] = set()
         self._consec:      dict  = {}
         self._thread:      Optional[threading.Thread] = None
         self._stop_evt:    threading.Event = threading.Event()
@@ -132,36 +131,14 @@ def is_private_ip(ip: str) -> bool:
         return True  # unparseable — skip to be safe
 
 
-# ── Firewall helpers ───────────────────────────────────────────────────────────
-BLOCK_CONF_THRESHOLD = 0.85   # minimum confidence to trigger a block
-
-def _firewall_block(ip: str) -> bool:
-    """Add a Windows Firewall inbound block rule. Returns True on success."""
-    rule_name = f"IPS_BLOCK_{ip}"
-    cmd = (
-        f'netsh advfirewall firewall add rule '
-        f'name="{rule_name}" dir=in action=block remoteip={ip}'
-    )
-    try:
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-        return result.returncode == 0
-    except Exception:
-        return False
-
+from firewall import fw_manager
 
 def unblock_ip(ip: str) -> bool:
-    """Remove the Windows Firewall block rule for an IP. Returns True on success."""
-    rule_name = f"IPS_BLOCK_{ip}"
-    cmd = f'netsh advfirewall firewall delete rule name="{rule_name}"'
-    try:
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-        ok = result.returncode == 0
-        if ok:
-            engine.blocked_ips.discard(ip)
-        return ok
-    except Exception:
-        return False
+    """Unblock an IP address via Windows Firewall. Returns True on success."""
+    return fw_manager.unblock_ip(ip)
 
+
+BLOCK_CONF_THRESHOLD = 0.80   # minimum confidence to trigger a block (Updated to 0.80 as per user requirement)
 
 # ── Mitigation ─────────────────────────────────────────────────────────────────
 def execute_mitigation(ip: str, severity: str, label: str, conf: float, is_sim: bool):
@@ -186,14 +163,13 @@ def execute_mitigation(ip: str, severity: str, label: str, conf: float, is_sim: 
         and conf >= BLOCK_CONF_THRESHOLD
         and ip
         and not is_private_ip(ip)
-        and ip not in engine.blocked_ips
+        and ip not in fw_manager.blocked_ips
         and not is_sim   # never block during simulation — flows use fake IPs
     )
 
     if should_block:
-        blocked = _firewall_block(ip)
-        if blocked:
-            engine.blocked_ips.add(ip)
+        reason = f"{severity} {label} ({conf:.1%} conf)"
+        blocked = fw_manager.block_ip(ip, reason)
 
     # Webhook notification for HIGH / CRITICAL
     if severity in ("CRITICAL", "HIGH") and settings.webhook_url:
@@ -405,7 +381,6 @@ def stop_engine():
 def clear_session():
     stop_engine()
     store.reset()
-    engine.blocked_ips.clear()
     engine._consec.clear()
     engine.sim_active = False
     engine.sniffer_ok = False
