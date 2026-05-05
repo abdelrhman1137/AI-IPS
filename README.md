@@ -1,6 +1,4 @@
-# AI-Based Intrusion Detection System for IoT Networks
-**Course:** Cyber Physical Systems Security (CCY4301)  
-**Developed by:** [Your Team Name/Numbers]  
+# AI-Based Intrusion Prevention System (AIPS)
 **Status:** Live Web Dashboard Optimized
 
 ## Project Overview
