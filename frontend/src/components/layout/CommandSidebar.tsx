@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Shield, Play, Square, RotateCcw,
-  ChevronDown, ChevronRight, LogOut,
+  ChevronDown, ChevronRight, LogOut, Crosshair,
 } from 'lucide-react';
 import { useAlertStore } from '../../store/alertStore';
 import { apiPost, apiGet } from '../../hooks/useAuth';
@@ -28,6 +28,8 @@ export default function CommandSidebar({ token, email, onLogout, onCommandPalett
   });
   const [mitigationOpen, setMitigationOpen] = useState(false);
   const [starting, setStarting]         = useState(false);
+  const [simulating, setSimulating]     = useState(false);
+  const [simMsg, setSimMsg]             = useState('');
   const [startError, setStartError]     = useState('');
 
   // Load settings from backend on mount
@@ -48,21 +50,50 @@ export default function CommandSidebar({ token, email, onLogout, onCommandPalett
     setStartError('');
     try {
       const res = await apiPost('/engine/start', token);
-      if (res && res.success === true) {
-        // Backend confirmed engine started — WebSocket metric heartbeats will
-        // update snifferOk / snifferError shortly after.
+      if (res?._error) {
+        // HTTP error or network failure — surface the backend's detail message
+        const detail = res.detail ?? `Backend error (${res._status ?? 'unreachable'})`;
+        setStartError(detail);
+      } else if (res?.success === true) {
         useAlertStore.setState({ running: true });
       } else {
-        // Either {success: false} from the API or {} from a connection error
-        const detail = res?.detail ?? '';
         setStartError(
-          detail || 'Cannot reach backend — make sure start_backend.bat is running as Administrator.'
+          res?.detail || 'Cannot reach backend — make sure start_backend.bat is running as Administrator.'
         );
       }
     } catch (e) {
       setStartError('Could not reach backend — make sure start_backend.bat is running as Administrator.');
     } finally {
       setStarting(false);
+    }
+  };
+
+  const handleSimulate = async () => {
+    setSimulating(true);
+    setSimMsg('');
+    try {
+      // Auto-start engine first if not running
+      if (!running) {
+        const startRes = await apiPost('/engine/start', token);
+        if (startRes?._error) {
+          setSimMsg(`⚠ Could not start engine: ${startRes.detail ?? 'unknown error'}`);
+          return;
+        }
+        useAlertStore.setState({ running: true });
+        // Give the sniffer 500ms to come up
+        await new Promise(r => setTimeout(r, 500));
+      }
+      const res = await apiPost('/sim/start', token);
+      if (res?._error) {
+        setSimMsg(`⚠ ${res.detail ?? 'Simulation failed'}`);
+      } else {
+        setSimMsg('✓ Simulation launched — watch Live Feed');
+        setTimeout(() => setSimMsg(''), 4000);
+      }
+    } catch {
+      setSimMsg('⚠ Could not reach backend');
+    } finally {
+      setSimulating(false);
     }
   };
 
@@ -184,6 +215,35 @@ export default function CommandSidebar({ token, email, onLogout, onCommandPalett
           {snifferError && (
             <div style={{ marginTop: 8, fontSize: 10, padding: '5px 8px', borderRadius: 4, background: 'rgba(255,45,85,0.06)', border: '1px solid rgba(255,45,85,0.2)', color: 'var(--sev-critical)', fontFamily: 'var(--font-mono)' }}>
               Sniffer: {snifferError}
+            </div>
+          )}
+        </div>
+
+        {/* ─ Simulation ─ */}
+        <div style={{ padding: '14px', borderBottom: '1px solid var(--border-dim)' }}>
+          <div className="section-label">Attack Simulation</div>
+          <button
+            className="btn btn-ghost"
+            onClick={handleSimulate}
+            disabled={simulating}
+            style={{
+              fontSize: 12, width: '100%',
+              color: simulating ? 'var(--text-dim)' : 'var(--sev-critical)',
+              borderColor: simulating ? 'var(--border-dim)' : 'rgba(255,45,85,0.3)',
+            }}
+          >
+            <Crosshair size={12} />
+            {simulating ? 'Launching…' : 'Simulate Attack'}
+          </button>
+          {simMsg && (
+            <div style={{
+              marginTop: 8, fontSize: 10, padding: '5px 8px', borderRadius: 4,
+              background: simMsg.startsWith('✓') ? 'rgba(0,255,136,0.06)' : 'rgba(255,45,85,0.06)',
+              border: `1px solid ${simMsg.startsWith('✓') ? 'rgba(0,255,136,0.15)' : 'rgba(255,45,85,0.2)'}`,
+              color: simMsg.startsWith('✓') ? 'var(--accent-green)' : 'var(--sev-critical)',
+              fontFamily: 'var(--font-mono)',
+            }}>
+              {simMsg}
             </div>
           )}
         </div>

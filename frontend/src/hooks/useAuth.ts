@@ -89,17 +89,22 @@ export async function apiPost(path: string, token: string, body?: object) {
       headers: authHeaders(token),
       body:    body ? JSON.stringify(body) : undefined,
     });
-    return safeJson(r);
-  } catch {
-    return {};
+    const data = await safeJson(r);
+    // Attach HTTP status so callers know if this was an error
+    if (!r.ok) return { ...data, _error: true, _status: r.status };
+    return data;
+  } catch (e) {
+    return { _error: true, detail: reachabilityError(e) };
   }
 }
 
 export async function apiGet(path: string, token: string) {
   try {
     const r = await fetch(`${API}${path}`, { headers: authHeaders(token) });
-    return safeJson(r);
-  } catch {
-    return {};
+    const data = await safeJson(r);
+    if (!r.ok) return { ...data, _error: true, _status: r.status };
+    return data;
+  } catch (e) {
+    return { _error: true, detail: reachabilityError(e) };
   }
 }

@@ -9,9 +9,13 @@ _DIR = os.path.dirname(os.path.abspath(__file__))
 _BLOCKED_FILE = os.path.join(_DIR, "blocked_ips.json")
 
 class FirewallManager:
+    # Dummy IP prefix used by the simulator — these should not persist across restarts
+    _SIM_IP_PREFIX = '203.0.113.'
+
     def __init__(self):
         self.blocked_ips: Dict[str, dict] = {}
         self._load_state()
+        self._purge_stale_sim_ips()
 
     def is_admin(self) -> bool:
         """Check if the current process has Administrator privileges."""
@@ -27,6 +31,15 @@ class FirewallManager:
                     self.blocked_ips = json.load(f)
             except Exception:
                 self.blocked_ips = {}
+
+    def _purge_stale_sim_ips(self):
+        """Remove dummy simulator IPs (203.0.113.x) that carry over across restarts.
+        These are never real firewall rules, just in-memory tracking artifacts."""
+        stale = [ip for ip in list(self.blocked_ips) if ip.startswith(self._SIM_IP_PREFIX)]
+        if stale:
+            for ip in stale:
+                del self.blocked_ips[ip]
+            self._save_state()
 
     def _save_state(self):
         try:

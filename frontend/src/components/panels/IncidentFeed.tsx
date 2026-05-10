@@ -24,7 +24,7 @@ function FeedRow({ ev }: { ev: FlowEvent }) {
 
   // Log the raw event so DevTools confirms which keys arrive from the backend
   // eslint-disable-next-line no-console
-  if (process.env.NODE_ENV === 'development') console.log('[FeedRow]', ev);
+  if (import.meta.env.DEV) console.log('[FeedRow]', ev);
 
   // Build compact connection string.
   // Guard: src_port and dst_port can be 0 for self-test flows — use them if present.

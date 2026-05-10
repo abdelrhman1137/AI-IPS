@@ -15,7 +15,7 @@ Changes vs previous version:
 import pandas as pd
 import numpy as np
 import socket
-from scapy.all import sniff, IP, IPv6, TCP, UDP
+import random
 import time
 import os
 import json
@@ -74,6 +74,8 @@ class NetworkReceptor:
         self.sniffer_error    = None
         self.sniffer_running  = False
         self._stop_sniff      = False
+        # Set to True by engine when monitoring loop is active
+        self.engine_running   = False
 
         # Clean stale inject files from previous session
         for path in (self.INJECT_FILE, self.INJECT_FILE + ".processing",
@@ -163,14 +165,20 @@ class NetworkReceptor:
         Returns (DataFrame, is_simulated, src_ip, dst_ip, src_port, dst_port)
         or (None, False, "", "", 0, 0).
         Priority: injected (file or in-process) → real captured.
+        Only processes flows when engine_running is True.
         """
+        # Only process when engine is actively running
+        if not self.engine_running:
+            return None, False, "", "", 0, 0
+
         # 1. Drain file inject queue
         self._drain_file_queue()
 
         # 2. Return an in-process injected flow if available
         try:
             row = self._queue.get_nowait()
-            return pd.DataFrame([row], columns=self.FEATURE_COLUMNS), True, _LOCAL_IP, "", 0, 0
+            dummy_ip = f"203.0.113.{random.randint(1, 254)}"
+            return pd.DataFrame([row], columns=self.FEATURE_COLUMNS), True, dummy_ip, "", 0, 0
         except Empty:
             pass
 

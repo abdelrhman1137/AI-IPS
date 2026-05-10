@@ -78,7 +78,7 @@ class EngineSettings:
     def __init__(self):
         self.conf_threshold: float = 0.80
         self.guard:          int   = 1
-        self.auto_block:     bool  = False
+        self.auto_block:     bool  = True
         self.webhook_url:    str   = ""
         self.interface:      str   = ""
 
@@ -155,17 +155,20 @@ def execute_mitigation(ip: str, severity: str, label: str, conf: float, is_sim: 
         except Exception:
             pass
 
-    # Block if: auto_block enabled, severity is HIGH or CRITICAL, conf above threshold,
-    #           IP is not private/local, and not already blocked.
+    # For simulated flows: always block if HIGH/CRITICAL (dummy IPs are safe).
+    # For real traffic: only block if auto_block is enabled in settings.
+    # For sim IPs, skip the 'already blocked' guard — they're dummy addresses
+    # that should be tracked fresh each simulation run.
+    is_sim_ip = ip.startswith('203.0.113.')
     should_block = (
-        settings.auto_block
+        (is_sim or settings.auto_block)
         and severity in ("CRITICAL", "HIGH")
         and conf >= BLOCK_CONF_THRESHOLD
         and ip
         and not is_private_ip(ip)
-        and ip not in fw_manager.blocked_ips
-        and not is_sim   # never block during simulation — flows use fake IPs
+        and (is_sim_ip or ip not in fw_manager.blocked_ips)
     )
+
 
     if should_block:
         reason = f"{severity} {label} ({conf:.1%} conf)"
@@ -197,15 +200,17 @@ def _monitoring_loop(loop: asyncio.AbstractEventLoop):
     last_normal_ts = 0.0
 
     while not engine._stop_evt.is_set():
-        # Check for simulation done signal
+        # Check for simulation done signal — do NOT flush the queue here,
+        # let remaining flows drain naturally so all attacks get detected.
         if os.path.exists(DONE_SIGNAL):
-            engine.sim_active = False
-            receptor.flush_all()
             try:
                 os.remove(DONE_SIGNAL)
             except OSError:
                 pass
-            _broadcast_event(loop, {"type": "sim_done"})
+            # Only mark sim_done after the queue is fully drained
+            if receptor._queue.empty():
+                engine.sim_active = False
+                _broadcast_event(loop, {"type": "sim_done"})
 
         try:
             live_flow, is_sim, src_ip, dst_ip, src_port, dst_port = receptor.get_latest_flow()
@@ -253,6 +258,8 @@ def _monitoring_loop(loop: asyncio.AbstractEventLoop):
                 settings.conf_threshold,
             )
         except Exception as e:
+            with open("debug_mitigation.txt", "a") as dbg:
+                dbg.write(f"ERROR: {e}\n")
             _broadcast_event(loop, {"type": "error", "message": f"Model error: {e}"})
             time.sleep(0.1)
             continue
@@ -345,6 +352,8 @@ def start_engine(interface: str, loop: Optional[asyncio.AbstractEventLoop] = Non
     # (updated inside the capture thread) not by whether this call throws.
     # Note: start_sniffing() resets raw_packet_count to 0 internally.
     receptor.start_sniffing(interface=interface)
+    # Signal the receptor that flows should now be processed
+    receptor.engine_running = True
     # Give the Npcap thread ~250 ms to either bind the interface or report an error
     # before the monitoring loop reads sniffer_running for the first heartbeat.
     time.sleep(0.25)
@@ -374,6 +383,8 @@ def start_engine(interface: str, loop: Optional[asyncio.AbstractEventLoop] = Non
 def stop_engine():
     engine.running = False
     engine._stop_evt.set()
+    # Stop the receptor from processing any more flows immediately
+    receptor.engine_running = False
     receptor.stop_sniffing()
     receptor.flush_all()
 
@@ -410,7 +421,7 @@ def run_self_test(loop: asyncio.AbstractEventLoop):
 
         if label != "Normal Traffic" and engine._consec.get(label, 0) >= settings.guard:
             sev     = get_severity(label, conf)
-            src_ip  = row.get("Source IP", "127.0.0.1")
+            src_ip  = row.get("Source IP", "203.0.113.99")
             blocked, pcap_path = execute_mitigation(src_ip, sev, label, conf, is_sim=True)
             fired  += 1
 
@@ -423,7 +434,7 @@ def run_self_test(loop: asyncio.AbstractEventLoop):
                 port=int(row.get("Destination Port", 0)),
                 duration_us=int(row.get("Flow Duration", 0)),
                 src="SIM",
-                src_ip=row.get("Source IP", "127.0.0.1"),
+                src_ip=src_ip,
                 blocked=blocked,
                 pcap_path=pcap_path,
                 all_probs={k: round(v, 4) for k, v in all_p.items()},
@@ -465,11 +476,11 @@ def get_interfaces() -> list:
 
 def get_best_interface() -> str:
     """
-    Probe every available interface by actually opening it with Scapy.
-    Returns the first interface that has live traffic (pkts > 0 in 0.15s window).
-    Only caches when a live-traffic NIC is found — never caches zero-traffic or
-    loopback interfaces, because the pre-warm could run before traffic exists.
-    Falls back to first openable non-loopback, then loopback, if no live traffic.
+    Probe every available interface IN PARALLEL (0.3 s each) so the total
+    wait is 0.3 s regardless of how many NICs exist.
+    Returns the first interface with live traffic, falling back to the first
+    openable non-loopback, then loopback.
+    Caches only when a live-traffic NIC is found.
     """
     global _cached_interface
     if _cached_interface:
@@ -481,26 +492,45 @@ def get_best_interface() -> str:
         return ""
 
     ifaces = get_if_list()
-    openable_non_loopback: list = []
-    openable_loopback:     list = []
+    if not ifaces:
+        return ""
 
-    for iface in ifaces:
+    # results[iface] = number of packets seen (or -1 if interface can't be opened)
+    results: dict = {}
+    lock = threading.Lock()
+
+    def _probe(iface: str):
         try:
-            pkts = scapy_sniff(iface=iface, count=5, timeout=0.15, store=1)
-            if len(pkts) > 0:
-                # Found a live interface — cache and return immediately.
-                # Only cache live-traffic interfaces; never cache loopback/idle.
-                _cached_interface = iface
-                return iface
-            is_lb = "loopback" in iface.lower() or iface.endswith("Loopback")
-            (openable_loopback if is_lb else openable_non_loopback).append(iface)
+            pkts = scapy_sniff(iface=iface, count=1, timeout=0.3, store=1)
+            with lock:
+                results[iface] = len(pkts)
         except Exception:
-            pass   # interface cannot be opened by this process — skip
+            with lock:
+                results[iface] = -1   # can't open
 
-    # No live traffic found — return best fallback WITHOUT caching,
-    # so the next Start press re-probes (traffic may have started by then).
-    if openable_non_loopback:
-        return openable_non_loopback[0]
-    if openable_loopback:
-        return openable_loopback[0]
+    threads = [threading.Thread(target=_probe, args=(iface,), daemon=True)
+               for iface in ifaces]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    # Prefer first interface that had live traffic
+    for iface in ifaces:
+        if results.get(iface, -1) > 0:
+            _cached_interface = iface
+            return iface
+
+    # Fallback: first openable non-loopback (no live traffic yet)
+    for iface in ifaces:
+        if results.get(iface, -1) == 0:
+            is_lb = "loopback" in iface.lower() or iface.endswith("Loopback")
+            if not is_lb:
+                return iface
+
+    # Fallback: first openable (even loopback)
+    for iface in ifaces:
+        if results.get(iface, -1) >= 0:
+            return iface
+
     return ifaces[0] if ifaces else ""

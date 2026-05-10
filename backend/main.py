@@ -48,6 +48,15 @@ async def _capture_loop():
     engine_module.engine.broadcast = manager.broadcast
     engine_module.set_loop(_loop)
 
+    # Pre-warm interface detection in background so Start is near-instant
+    import threading as _threading
+    def _prewarm():
+        try:
+            engine_module.get_best_interface()
+        except Exception:
+            pass
+    _threading.Thread(target=_prewarm, daemon=True).start()
+
 
 # ── WebSocket Manager ──────────────────────────────────────────────────────────
 class ConnectionManager:
@@ -149,7 +158,7 @@ def unblock(payload: UnblockPayload, email: str = Depends(auth_module.get_curren
     return {"success": ok, "ip": ip}
 
 @app.post("/api/engine/selftest")
-def self_test(email: str = Depends(auth_module.get_current_user)):
+def self_test():
     if _loop is None:
         raise HTTPException(status_code=503, detail="Server not ready yet")
     fired, msg = engine_module.run_self_test(_loop)
@@ -196,6 +205,13 @@ def sim_start(email: str = Depends(auth_module.get_current_user)):
     script = os.path.join(root, "simulate_attacks_headless.py")
     if not os.path.exists(script):
         script = os.path.join(root, "simulate_attacks.py")
+
+    # Auto-start the engine if not already running so it can process the flows
+    if not engine_module.engine.running and _loop is not None:
+        iface = engine_module.get_best_interface()
+        if iface:
+            engine_module.start_engine(iface, _loop)
+
     try:
         subprocess.Popen(
             [sys.executable, script],
